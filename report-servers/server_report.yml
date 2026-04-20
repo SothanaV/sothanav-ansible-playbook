@@ -1,0 +1,52 @@
+---
+- name: Generate Server Report
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Collect CPU info
+      command: lscpu
+      register: cpu_info
+      ignore_errors: true
+
+    - name: Collect memory info
+      command: free -h
+      register: memory_info
+      ignore_errors: true
+
+    - name: Collect disk info
+      command: df -h
+      register: disk_info
+      ignore_errors: true
+
+    - name: Collect OS info
+      command: lsb_release -a
+      register: os_info
+      ignore_errors: true
+
+    - name: Write report to file
+      shell: |
+        {
+          echo "========== CPU =========="
+          lscpu | head -5
+          echo "========== MEMORY =========="
+          free -h
+          echo "========== DISK =========="
+          df -h | head -5
+          echo "========== OS =========="
+          lsb_release -a 2>/dev/null
+        } > /tmp/report.txt
+
+    - name: Display report
+      command: cat /tmp/report.txt
+      register: report_output
+
+    - name: Show report content
+      debug:
+        msg: "{{ report_output.stdout_lines }}"
+
+    - name: Fetch report to control node
+      fetch:
+        src: /tmp/report.txt
+        dest: "./reports/{{ inventory_hostname }}_report.txt"
+        flat: true

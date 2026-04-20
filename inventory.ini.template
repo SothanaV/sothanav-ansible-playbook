@@ -1,0 +1,14 @@
+[masters]
+tlnw-prd-insm01 ansible_host=10.16.2.13 ansible_user=root
+tlnw-prd-insm02 ansible_host=10.16.2.14 ansible_user=root
+tlnw-prd-insm03 ansible_host=10.16.2.15 ansible_user=root
+
+[workers]
+tlnw-prd-insw01 ansible_host=10.16.2.16 ansible_user=root
+tlnw-prd-insw02 ansible_host=10.16.2.17 ansible_user=root
+tlnw-prd-insw03 ansible_host=10.16.2.18 ansible_user=root
+
+
+[all:vars]
+; ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_private_key_file=~/Desktop/ssh/privatekey
