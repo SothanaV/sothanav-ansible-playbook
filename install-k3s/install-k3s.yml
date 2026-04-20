@@ -1,0 +1,147 @@
+---
+# K3s Multi-Master (HA) + Multi-Worker Installation
+# Prerequisites:
+#   - inventory with [masters] and [workers] groups
+#   - First host in [masters] is the bootstrap node
+#   - All nodes reachable via SSH
+#   - Requires: k3s_token variable (set in vars or extra-vars)
+
+- name: Prepare all nodes
+  hosts: masters:workers
+  gather_facts: false
+  become: true
+  vars:
+    k3s_version: "stable"
+  tasks:
+    - name: Disable swap
+      command: swapoff -a
+      changed_when: false
+
+    - name: Remove swap from fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*\s+swap\s+.*)$'
+        replace: '# \1'
+
+    - name: Load kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Set sysctl params
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        reload: true
+      loop:
+        - { key: "net.bridge.bridge-nf-call-iptables", value: "1" }
+        - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+        - { key: "net.ipv4.ip_forward", value: "1" }
+
+    - name: Install prerequisites
+      package:
+        name:
+          - curl
+          - iptables
+        state: present
+
+
+- name: Bootstrap first master
+  hosts: masters[0]
+  gather_facts: false
+  become: true
+  vars:
+    k3s_version: "stable"
+    # Override k3s_token via extra-vars: -e k3s_token=mysecret
+    k3s_token: "{{ k3s_token | default('changeme-set-a-strong-token') }}"
+  tasks:
+    - name: Install k3s as init server (embedded etcd HA)
+      shell: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_CHANNEL="{{ k3s_version }}" \
+          K3S_TOKEN="{{ k3s_token }}" \
+          sh -s - server \
+          --cluster-init \
+          --tls-san "{{ ansible_host }}"
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Wait for k3s to be ready on bootstrap node
+      command: k3s kubectl get nodes
+      register: nodes_ready
+      retries: 20
+      delay: 10
+      until: nodes_ready.rc == 0
+
+    - name: Fetch node token
+      slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: node_token_raw
+
+    - name: Set node token fact
+      set_fact:
+        k3s_node_token: "{{ node_token_raw.content | b64decode | trim }}"
+
+
+- name: Join additional masters
+  hosts: masters[1:]
+  gather_facts: false
+  become: true
+  vars:
+    k3s_version: "stable"
+    first_master_ip: "{{ hostvars[groups['masters'][0]]['ansible_host'] }}"
+  tasks:
+    - name: Join cluster as additional server
+      shell: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_CHANNEL="{{ k3s_version }}" \
+          K3S_TOKEN="{{ hostvars[groups['masters'][0]]['k3s_node_token'] }}" \
+          sh -s - server \
+          --server "https://{{ first_master_ip }}:6443" \
+          --tls-san "{{ ansible_host }}"
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Wait for k3s to be ready
+      command: k3s kubectl get nodes
+      register: nodes_ready
+      retries: 20
+      delay: 10
+      until: nodes_ready.rc == 0
+
+
+- name: Join workers
+  hosts: workers
+  gather_facts: false
+  become: true
+  vars:
+    k3s_version: "stable"
+    first_master_ip: "{{ hostvars[groups['masters'][0]]['ansible_host'] }}"
+  tasks:
+    - name: Join cluster as worker
+      shell: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_CHANNEL="{{ k3s_version }}" \
+          K3S_TOKEN="{{ hostvars[groups['masters'][0]]['k3s_node_token'] }}" \
+          K3S_URL="https://{{ first_master_ip }}:6443" \
+          sh -s - agent
+      args:
+        creates: /usr/local/bin/k3s
+
+
+- name: Verify cluster
+  hosts: masters[0]
+  gather_facts: false
+  become: true
+  tasks:
+    - name: List all nodes
+      command: k3s kubectl get nodes -o wide
+      register: cluster_nodes
+
+    - name: Show cluster state
+      debug:
+        msg: "{{ cluster_nodes.stdout_lines }}"
