@@ -145,3 +145,35 @@
     - name: Show cluster state
       debug:
         msg: "{{ cluster_nodes.stdout_lines }}"
+
+
+- name: Fetch kubeconfig
+  hosts: masters[0]
+  gather_facts: false
+  become: true
+  vars:
+    kubeconfig_local_path: "./kubeconfig-k3s.yml"
+    first_master_ip: "{{ hostvars[groups['masters'][0]]['ansible_host'] }}"
+  tasks:
+    - name: Read kubeconfig from master
+      slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: kubeconfig_raw
+
+    - name: Replace localhost with master IP
+      set_fact:
+        kubeconfig_content: >-
+          {{ (kubeconfig_raw.content | b64decode)
+             | replace('https://127.0.0.1:6443', 'https://' + first_master_ip + ':6443') }}
+
+    - name: Save kubeconfig locally
+      copy:
+        content: "{{ kubeconfig_content }}"
+        dest: "{{ kubeconfig_local_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Show kubeconfig path
+      debug:
+        msg: "Kubeconfig saved to {{ kubeconfig_local_path }}. Use: export KUBECONFIG={{ kubeconfig_local_path }}"

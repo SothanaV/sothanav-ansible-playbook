@@ -15,14 +15,14 @@ Ensure your inventory has `[masters]` and `[workers]` groups. The **first host**
 
 ```ini
 [masters]
-tlnw-prd-insm01 ansible_host=10.16.2.13
-tlnw-prd-insm02 ansible_host=10.16.2.14
-tlnw-prd-insm03 ansible_host=10.16.2.15
+prd-insm01 ansible_host=10.16.2.13
+prd-insm02 ansible_host=10.16.2.14
+prd-insm03 ansible_host=10.16.2.15
 
 [workers]
-tlnw-prd-insw01 ansible_host=10.16.2.16
-tlnw-prd-insw02 ansible_host=10.16.2.17
-tlnw-prd-insw03 ansible_host=10.16.2.18
+prd-insw01 ansible_host=10.16.2.16
+prd-insw02 ansible_host=10.16.2.17
+prd-insw03 ansible_host=10.16.2.18
 
 [all:vars]
 ansible_user=root
@@ -75,17 +75,6 @@ ansible-playbook -i inventory.ini install-k3s/install-k3s.yml \
 | 4 | Join workers | workers | Join cluster as agent nodes |
 | 5 | Verify cluster | `masters[0]` | Run `kubectl get nodes -o wide` and display output |
 
-## Access kubeconfig
-
-After installation, kubeconfig is available on each master at `/etc/rancher/k3s/k3s.yaml`.
-
-```bash
-# Copy to local machine
-scp stoadmin1@10.16.2.13:/etc/rancher/k3s/k3s.yaml ~/.kube/config
-
-# Update the server address to the master IP
-sed -i 's/127.0.0.1/10.16.2.13/' ~/.kube/config
-```
 
 ## Uninstall
 
